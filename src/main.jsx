@@ -44,6 +44,22 @@ function App() {
   const [msg, setMsg] = useState('');
   const [role, setRole] = useState('');
   const [tab, setTab] = useState('customers');
+  const [tabHistory, setTabHistory] = useState([]);
+
+function goToTab(nextTab) {
+  setTabHistory(prev => [...prev, tab]);
+  setTab(nextTab);
+  setMsg('');
+}
+
+function goBack() {
+  if (tabHistory.length > 0) {
+    setTab(tabHistory[tabHistory.length - 1]);
+    setTabHistory(prev => prev.slice(0, -1));
+  } else {
+    setTab('customers');
+  }
+}
 
   const [customers, setCustomers] = useState([]);
   const [banks, setBanks] = useState([]);
@@ -516,11 +532,22 @@ UPI: ${escapeHtml(bank.upi_id)}</p>` : ''}
       <div className="stat"><span>Collected</span><b>{money(totalCollected)}</b></div>
       <div className="stat"><span>Outstanding</span><b>{money(totalOutstanding)}</b></div>
     </section>
-
+    <div className="card nav-tabs">
+  <button className="secondary" onClick={goBack}>
+    ← Back
+  </button>
+  <button className="secondary" onClick={() => {
+    setTabHistory([]);
+    setTab('customers');
+    setMsg('');
+  }}>
+    🏠 Home
+  </button>
+</div>
     <nav className="card nav-tabs">
       {nav.map(([id, label]) =>
         <button key={id} className={tab === id ? 'active' : 'secondary'}
-          onClick={() => { setTab(id); setMsg(''); }}>
+          onClick={() => goToTab(id)}
           {label}
         </button>
       )}
