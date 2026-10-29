@@ -27,8 +27,15 @@ customer_id: '', invoice_number: '', invoice_date: today(),
 due_date: '', description: '', amount: '', gst_rate: '5'
 };
 const blankPayment = {
-invoice_id: '', payment_date: today(), amount: '',
-method: 'Bank transfer', reference: '', notes: ''
+  invoice_id: '',
+  payment_date: today(),
+  amount: '',
+  method: 'Bank transfer',
+  reference: '',
+  notes: '',
+  from_name: '',
+  to_name: '',
+  purpose: ''
 };
 
 function App() {
@@ -745,6 +752,38 @@ return <main className="app">
         <input type="number" min="0.01" step="0.01" required value={paymentForm.amount}  
           onChange={e => setPaymentForm({ ...paymentForm, amount: e.target.value })} />  
       </label>  
+      <label>From (কার কাছ থেকে)
+  <input
+    value={paymentForm.from_name || ''}
+    onChange={e => setPaymentForm({
+      ...paymentForm,
+      from_name: e.target.value
+    })}
+    placeholder="Customer / Supplier / Other"
+  />
+</label>
+
+<label>To (কাকে)
+  <input
+    value={paymentForm.to_name || ''}
+    onChange={e => setPaymentForm({
+      ...paymentForm,
+      to_name: e.target.value
+    })}
+    placeholder="Business / Driver / Other"
+  />
+</label>
+
+<label>Purpose (কেন)
+  <input
+    value={paymentForm.purpose || ''}
+    onChange={e => setPaymentForm({
+      ...paymentForm,
+      purpose: e.target.value
+    })}
+    placeholder="Payment reason"
+  />
+</label>
       <label>Payment method  
         <select value={paymentForm.method}  
           onChange={e => setPaymentForm({ ...paymentForm, method: e.target.value })}>  
@@ -768,11 +807,18 @@ return <main className="app">
   <div className="table-wrap"><table>  
     <thead><tr><th>Date</th><th>Invoice ID</th><th>Method</th>  
       <th>Reference</th><th>Amount</th></tr></thead>  
-    <tbody>{payments.map(p => <tr key={p.id}>  
-      <td>{p.payment_date}</td>  
-      <td>{invoices.find(i => i.id === p.invoice_id)?.invoice_number || '—'}</td>  
-      <td>{p.method}</td><td>{p.reference || '—'}</td><td>{money(p.amount)}</td>  
-    </tr>)}</tbody>  
+    <tbody>
+  {payments.map(p => <tr key={p.id}>
+    <td>{p.payment_date}</td>
+    <td>{p.from_name || '-'}</td>
+    <td>{p.to_name || '-'}</td>
+    <td>{p.purpose || '-'}</td>
+    <td>{invoices.find(i => i.id === p.invoice_id)?.invoice_number || '-'}</td>
+    <td>{p.method}</td>
+    <td>{p.reference || '-'}</td>
+    <td>₹{Number(p.amount || 0).toFixed(2)}</td>
+  </tr>)}
+</tbody>
   </table></div>  
 </section>}  
 
