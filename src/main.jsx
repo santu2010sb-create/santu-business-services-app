@@ -10,843 +10,1210 @@ const KEY0 = import.meta.env.VITE_SUPABASE_ANON_KEY || savedKey;
 const client = URL0 && KEY0 ? createClient(URL0, KEY0) : null;
 
 const today = () => new Date().toISOString().slice(0, 10);
-const money = n => new Intl.NumberFormat('en-IN', {
-style: 'currency', currency: 'INR', maximumFractionDigits: 2
-}).format(Number(n) || 0);
+const money = (value) =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 2,
+  }).format(Number(value) || 0);
 
 const blankCustomer = {
-full_name: '', business_name: '', mobile: '',
-email: '', address: '', notes: ''
+  full_name: '', business_name: '', mobile: '', email: '', address: '', notes: '',
 };
 const blankBank = {
-bank_name: '', account_name: '', account_number: '',
-ifsc: '', branch: '', upi_id: '', notes: ''
+  bank_name: '', account_name: '', account_number: '', ifsc: '', branch: '', upi_id: '', notes: '',
 };
 const blankInvoice = {
-customer_id: '', invoice_number: '', invoice_date: today(),
-due_date: '', description: '', amount: '', gst_rate: '5'
+  customer_id: '', invoice_number: '', invoice_date: today(), due_date: '',
+  description: '', amount: '', gst_rate: '5', status: 'Unpaid',
 };
 const blankPayment = {
-  invoice_id: '',
-  payment_date: today(),
-  amount: '',
-  method: 'Bank transfer',
-  reference: '',
-  notes: '',
-  from_name: '',
-  to_name: '',
-  purpose: ''
+  invoice_id: '', transaction_type: 'Received', from_name: '', to_name: '', purpose: '',
+  payment_date: today(), amount: '', method: 'Bank transfer', reference: '', notes: '',
 };
 
 function App() {
-const [session, setSession] = useState(null);
-const [checking, setChecking] = useState(true);
-const [config, setConfig] = useState(!client);
-const [url, setUrl] = useState(URL0);
-const [key, setKey] = useState(KEY0);
-const [email, setEmail] = useState('');
-const [password, setPassword] = useState('');
-const [busy, setBusy] = useState(false);
-const [msg, setMsg] = useState('');
-const [role, setRole] = useState('');
-const [tab, setTab] = useState('customers');
+  const [session, setSession] = useState(null);
+  const [checking, setChecking] = useState(true);
+  const [config, setConfig] = useState(!client);
+  const [url, setUrl] = useState(URL0);
+  const [key, setKey] = useState(KEY0);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [role, setRole] = useState('');
+  const [tab, setTab] = useState('customers');
   const [tabHistory, setTabHistory] = useState([]);
 
-function goToTab(nextTab) {
-  setTabHistory(prev => [...prev, tab]);
-  setTab(nextTab);
-  setMsg('');
-}
-
-function goBack() {
-  if (tabHistory.length > 0) {
-    setTab(tabHistory[tabHistory.length - 1]);
-    setTabHistory(prev => prev.slice(0, -1));
-  } else {
-    setTab('customers');
+  function goToTab(nextTab) {
+    setTabHistory((previous) => [...previous, tab]);
+    setTab(nextTab);
+    setMsg('');
   }
 
-const [customers, setCustomers] = useState([]);
-const [banks, setBanks] = useState([]);
-const [invoices, setInvoices] = useState([]);
-const [payments, setPayments] = useState([]);
-
-const [search, setSearch] = useState('');
-const [formOpen, setFormOpen] = useState(false);
-const [editing, setEditing] = useState(null);
-const [form, setForm] = useState(blankCustomer);
-
-const [bankForm, setBankForm] = useState(blankBank);
-const [invoiceForm, setInvoiceForm] = useState(blankInvoice);
-const [paymentForm, setPaymentForm] = useState(blankPayment);
-
-const isAdmin = role?.toLowerCase() === 'admin';
-
-useEffect(() => {
-if (!client) {
-setChecking(false);
-return;
-}
-let active = true;
-client.auth.getSession().then(({ data, error }) => {
-if (!active) return;
-if (error) setMsg(error.message);
-setSession(data?.session || null);
-setChecking(false);
-});
-const { data: { subscription } } = client.auth.onAuthStateChange(
-(_event, nextSession) => setSession(nextSession)
-);
-return () => {
-active = false;
-subscription.unsubscribe();
-};
-}, []);
-
-async function loadData() {
-if (!client || !session) return;
-
-setBusy(true);  
-setMsg('');  
-
-try {  
-  const roleResult = await client  
-    .from('app_roles')  
-    .select('role')  
-    .eq('user_id', session.user.id)  
-    .maybeSingle();  
-
-  if (roleResult.error) throw roleResult.error;  
-
-  const currentRole = roleResult.data?.role || '';  
-  setRole(currentRole);  
-
-  if (!currentRole) {  
-    setCustomers([]);  
-    setBanks([]);  
-    setInvoices([]);  
-    setPayments([]);  
-    return;  
-  }  
-
-  const results = await Promise.all([  
-    client.from('customers')  
-      .select('*').order('created_at', { ascending: false }),  
-    client.from('bank_details')  
-      .select('*').order('created_at', { ascending: false }),  
-    client.from('invoices')  
-      .select('*').order('created_at', { ascending: false }),  
-    client.from('payments')  
-      .select('*').order('created_at', { ascending: false })  
-  ]);  
-
-  const names = ['Customers', 'Bank Details', 'Invoices', 'Payments'];  
-  const failed = results.findIndex(r => r.error);  
-  if (failed >= 0) {  
-    throw new Error(`${names[failed]}: ${results[failed].error.message}`);  
-  }  
-
-  setCustomers(results[0].data || []);  
-  setBanks(results[1].data || []);  
-  setInvoices(results[2].data || []);  
-  setPayments(results[3].data || []);  
-} catch (error) {  
-  setMsg(error.message || 'Data load failed.');  
-} finally {  
-  setBusy(false);  
-}
-
-}
-
-useEffect(() => {
-if (session && client) loadData();
-else {
-setRole('');
-setCustomers([]);
-setBanks([]);
-setInvoices([]);
-setPayments([]);
-}
-}, [session]);
-
-const shownCustomers = useMemo(() => {
-const q = search.toLowerCase().trim();
-return customers.filter(c =>
-[c.full_name, c.business_name, c.mobile, c.email]
-.some(v => (v || '').toLowerCase().includes(q))
-);
-}, [customers, search]);
-
-const customerName = id =>
-customers.find(c => c.id === id)?.full_name || 'Unknown customer';
-
-const invoicePaid = id =>
-payments.filter(p => p.invoice_id === id)
-.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-
-const invoiceTotal = inv =>
-Number(inv.amount || 0) * (1 + Number(inv.gst_rate || 0) / 100);
-
-const invoiceDue = inv =>
-Math.max(0, invoiceTotal(inv) - invoicePaid(inv.id));
-
-const totalBilled = invoices
-.filter(i => i.status !== 'Cancelled')
-.reduce((sum, i) => sum + invoiceTotal(i), 0);
-
-const totalCollected = payments
-.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-
-const totalOutstanding = invoices
-.filter(i => i.status !== 'Cancelled')
-.reduce((sum, i) => sum + invoiceDue(i), 0);
-
-async function login(e) {
-e.preventDefault();
-if (!client) return;
-setBusy(true);
-setMsg('');
-const { error } = await client.auth.signInWithPassword({
-email: email.trim(), password
-});
-setBusy(false);
-if (error) setMsg(error.message);
-else setPassword('');
-}
-
-async function logout() {
-const { error } = await client.auth.signOut();
-if (error) setMsg(error.message);
-}
-
-async function saveCustomer(e) {
-e.preventDefault();
-setBusy(true);
-setMsg('');
-
-const data = { ...form, owner_id: session.user.id };  
-const result = editing  
-  ? await client.from('customers').update(data)  
-      .eq('id', editing).select().single()  
-  : await client.from('customers').insert(data).select().single();  
-
-setBusy(false);  
-if (result.error) {  
-  setMsg(result.error.message);  
-  return;  
-}  
-
-setCustomers(prev => editing  
-  ? prev.map(c => c.id === editing ? result.data : c)  
-  : [result.data, ...prev]);  
-
-setForm(blankCustomer);  
-setEditing(null);  
-setFormOpen(false);  
-setMsg('Customer saved successfully.');
-
-}
-
-async function deleteCustomer(id) {
-if (!isAdmin || !window.confirm('Delete this customer?')) return;
-
-const { error } = await client.from('customers').delete().eq('id', id);  
-if (error) {  
-  setMsg(error.message);  
-  return;  
-}  
-setCustomers(prev => prev.filter(c => c.id !== id));  
-setMsg('Customer deleted.');
-
-}
-
-async function saveBank(e) {
-e.preventDefault();
-setBusy(true);
-setMsg('');
-
-const { error } = await client.from('bank_details').insert({  
-  ...bankForm, owner_id: session.user.id  
-});  
-
-setBusy(false);  
-if (error) {  
-  setMsg(error.message);  
-  return;  
-}  
-
-setBankForm(blankBank);  
-setMsg('Bank details saved.');  
-await loadData();
-
-}
-
-async function deleteBank(id) {
-if (!window.confirm('Delete these bank details?')) return;
-const { error } = await client.from('bank_details').delete().eq('id', id);
-if (error) {
-setMsg(error.message);
-return;
-}
-setBanks(prev => prev.filter(b => b.id !== id));
-setMsg('Bank details deleted.');
-}
-
-async function saveInvoice(e) {
-e.preventDefault();
-if (!customers.some(c => c.id === invoiceForm.customer_id)) {
-setMsg('Please select a valid customer.');
-return;
-}
-
-setBusy(true);  
-setMsg('');  
-
-const { error } = await client.from('invoices').insert({  
-  ...invoiceForm,  
-  owner_id: session.user.id,  
-  amount: Number(invoiceForm.amount),  
-  gst_rate: Number(invoiceForm.gst_rate),  
-  due_date: invoiceForm.due_date || null,  
-  status: 'Unpaid'  
-});  
-
-setBusy(false);  
-if (error) {  
-  setMsg(error.message);  
-  return;  
-}  
-
-setInvoiceForm(blankInvoice);  
-setMsg('Invoice saved.');  
-await loadData();
-
-}
-
-async function savePayment(e) {
-e.preventDefault();
-
-const selectedInvoice = invoices.find(i => i.id === paymentForm.invoice_id);  
-if (!selectedInvoice) {  
-  setMsg('Please select an invoice.');  
-  return;  
-}  
-
-const amount = Number(paymentForm.amount);  
-const due = invoiceDue(selectedInvoice);  
-
-if (!Number.isFinite(amount) || amount <= 0) {  
-  setMsg('Enter a valid payment amount.');  
-  return;  
-}  
-if (amount > due + 0.001) {  
-  setMsg(`Payment exceeds the current balance of ${money(due)}.`);  
-  return;  
-}  
-
-setBusy(true);  
-setMsg('');  
-
-const { error } = await client.from('payments').insert({  
-  ...paymentForm,  
-  owner_id: session.user.id,  
-  amount  
-});  
-
-setBusy(false);  
-if (error) {  
-  setMsg(error.message);  
-  return;  
-}  
-
-setPaymentForm(blankPayment);  
-setMsg('Payment saved.');  
-await loadData();
-
-}
-
-async function cancelInvoice(inv) {
-if (!isAdmin || !window.confirm('Cancel this invoice?')) return;
-
-const { error } = await client.from('invoices')  
-  .update({ status: 'Cancelled' }).eq('id', inv.id);  
-
-if (error) {  
-  setMsg(error.message);  
-  return;  
-}  
-
-setInvoices(prev => prev.map(i =>  
-  i.id === inv.id ? { ...i, status: 'Cancelled' } : i  
-));  
-setMsg('Invoice cancelled.');
-
-}
-
-function printInvoice(inv) {
-const customer = customers.find(c => c.id === inv.customer_id);
-const bank = banks[0];
-const paid = invoicePaid(inv.id);
-const gst = Number(inv.amount) * Number(inv.gst_rate) / 100;
-const total = invoiceTotal(inv);
-
-const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, ch => ({  
-  '&': '&amp;', '<': '&lt;', '>': '&gt;',  
-  '"': '&quot;', "'": '&#39;'  
-}[ch]));  
-
-const w = window.open('', '_blank');  
-if (!w) {  
-  setMsg('Allow pop-ups to print the invoice.');  
-  return;  
-}  
-
-w.document.write(`<!doctype html>
-
-<html><head><meta charset="utf-8"><title>Invoice ${escapeHtml(inv.invoice_number)}</title>  
-<style>  
-body{font:15px Arial,sans-serif;color:#222;margin:32px}  
-h1{margin-bottom:4px} .muted{color:#666}  
-table{width:100%;border-collapse:collapse;margin-top:24px}  
-td,th{padding:10px;border:1px solid #ddd;text-align:left}  
-.right{text-align:right}.total{font-size:20px;font-weight:bold}  
-</style></head><body>  
-<h1>SANTU BUSINESS SERVICES</h1>  
-<p class="muted">YOUR OUTSOURCED OPERATIONS PARTNER</p>  
-<hr><h2>INVOICE</h2>  
-<p><b>Invoice No:</b> ${escapeHtml(inv.invoice_number)}<br>  
-<b>Date:</b> ${escapeHtml(inv.invoice_date)}<br>  
-<b>Due date:</b> ${escapeHtml(inv.due_date || '—')}</p>  
-<h3>Bill To</h3>  
-<p>${escapeHtml(customer?.full_name || '')}<br>  
-${escapeHtml(customer?.business_name || '')}<br>  
-${escapeHtml(customer?.address || '')}<br>  
-${escapeHtml(customer?.mobile || '')}</p>  
-<table><tr><th>Description</th><th class="right">Amount</th></tr>  
-<tr><td>${escapeHtml(inv.description || 'Services')}</td>  
-<td class="right">${money(inv.amount)}</td></tr>  
-<tr><td>GST (${escapeHtml(inv.gst_rate)}%)</td>  
-<td class="right">${money(gst)}</td></tr>  
-<tr><th>Total</th><th class="right">${money(total)}</th></tr>  
-<tr><td>Paid</td><td class="right">${money(paid)}</td></tr>  
-<tr><th>Balance due</th><th class="right">${money(Math.max(0,total-paid))}</th></tr>  
-</table>  
-${bank ? `<h3>Bank Details</h3><p>${escapeHtml(bank.bank_name)}<br>  
-Account name: ${escapeHtml(bank.account_name)}<br>  
-Account number: ${escapeHtml(bank.account_number)}<br>  
-IFSC: ${escapeHtml(bank.ifsc)}<br>  
-UPI: ${escapeHtml(bank.upi_id)}</p>` : ''}  
-<p class="muted">Thank you for your business.</p>  
-<script>window.onload=()=>window.print();</script>  
-</body></html>`);  
-    w.document.close();  
-  }  if (checking) return <main className="center">Checking session…</main>;
-
-if (config || !client) {
-return <main className="wrap">
-<header className="hero">
-<small>YOUR OUTSOURCED OPERATIONS PARTNER</small>
-<h1>SANTU BUSINESS SERVICES</h1>
-<p>Business Management App</p>
-</header>
-<section className="card">
-<h2>Connect Supabase</h2>
-<p>Enter your Project URL and public/anon key. Never use a service_role or secret key here.</p>
-<form onSubmit={e => {
-e.preventDefault();
-if (!url.startsWith('https://') || !key.trim()) {
-setMsg('Enter a valid Project URL and public key.');
-return;
-}
-localStorage.setItem('sbs_project_url', url.trim());
-localStorage.setItem('sbs_public_key', key.trim());
-window.location.reload();
-}}>
-<label>Project URL
-<input required value={url} onChange={e => setUrl(e.target.value)}
-placeholder="https://project.supabase.co" />
-</label>
-<label>Public / anon key
-<textarea required rows="3" value={key}
-onChange={e => setKey(e.target.value)} />
-</label>
-<button type="submit">Connect project</button>
-</form>
-{msg && <p className="msg">{msg}</p>}
-</section>
-</main>;
-}
-
-if (!session) {
-return <main className="wrap">
-<header className="hero">
-<small>YOUR OUTSOURCED OPERATIONS PARTNER</small>
-<h1>SANTU BUSINESS SERVICES</h1>
-<p>Business Management App</p>
-</header>
-<section className="card">
-<h2>Admin / Staff Login</h2>
-<form onSubmit={login}>
-<label>Email
-<input required type="email" value={email}
-onChange={e => setEmail(e.target.value)} />
-</label>
-<label>Password
-<input required type="password" value={password}
-onChange={e => setPassword(e.target.value)} />
-</label>
-<button disabled={busy}>{busy ? 'Please wait…' : 'Login'}</button>
-</form>
-<button className="secondary" onClick={() => setConfig(true)}>
-Supabase settings
-</button>
-{msg && <p className="msg">{msg}</p>}
-</section>
-</main>;
-}
-
-if (!role) {
-return <main className="wrap">
-<section className="card">
-<h2>Access pending</h2>
-<p>No role is assigned to this user in app_roles.</p>
-<p>Auth User ID:</p><code>{session.user.id}</code>
-<button className="secondary" onClick={logout}>Logout</button>
-{msg && <p className="msg">{msg}</p>}
-</section>
-</main>;
-}
-
-const nav = [
-['customers', 'Customers'],
-['banks', 'Bank Details'],
-['invoices', 'Invoices'],
-['payments', 'Payments'],
-['reports', 'Reports']
-];
-
-return <main className="app">
-<header className="hero">
-<small>YOUR OUTSOURCED OPERATIONS PARTNER</small>
-<div className="hero-row">
-<div>
-<h1>SANTU BUSINESS SERVICES</h1>
-<p>Business Management Dashboard</p>
-</div>
-<button className="secondary" onClick={logout}>Logout</button>
-</div>
-</header>
-
-<section className="stats">  
-  <div className="stat"><span>Customers</span><b>{customers.length}</b></div>  
-  <div className="stat"><span>Total billed</span><b>{money(totalBilled)}</b></div>  
-  <div className="stat"><span>Collected</span><b>{money(totalCollected)}</b></div>  
-  <div className="stat"><span>Outstanding</span><b>{money(totalOutstanding)}</b></div>  
-</section>  
-<div className="card nav-tabs">
-  <button className="secondary" onClick={goBack}>
-    ← Back
-  </button>
-  <button className="secondary" onClick={() => {
+  function goBack() {
+    if (tabHistory.length > 0) {
+      setTab(tabHistory[tabHistory.length - 1]);
+      setTabHistory((previous) => previous.slice(0, -1));
+    } else {
+      setTab('customers');
+    }
+    setMsg('');
+  }
+
+  function goHome() {
     setTabHistory([]);
     setTab('customers');
     setMsg('');
-  }}>
-    🏠 Home
-  </button>
-</div>
-<nav className="card nav-tabs">  
-  {nav.map(([id, label]) =>  
-    <button key={id} className={tab === id ? 'active' : 'secondary'}  
-    onClick={() => goToTab(id)}
-      {label}  
-    </button>  
-  )}  
-</nav>  
+  }
 
-{busy && <p className="muted">Working…</p>}  
-{msg && <div className="message" role="status">  
-  {msg}<button onClick={() => setMsg('')}>×</button>  
-</div>}  
+  const [customers, setCustomers] = useState([]);
+  const [banks, setBanks] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [payments, setPayments] = useState([]);
 
-{tab === 'customers' && <section className="card">  
-  <div className="section-title">  
-    <div><h2>Customer Master</h2><p>Add, search and edit customers.</p></div>  
-    <button onClick={() => {  
-      setEditing(null); setForm({ ...blankCustomer }); setFormOpen(!formOpen);  
-    }}>+ Add customer</button>  
-  </div>  
+  const [search, setSearch] = useState('');
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState(blankCustomer);
 
-  {formOpen && <form onSubmit={saveCustomer}>  
-    <h3>{editing ? 'Edit Customer' : 'New Customer'}</h3>  
-    <div className="grid">  
-      {[  
-        ['full_name', 'Full name'],  
-        ['business_name', 'Business name'],  
-        ['mobile', 'Mobile number'],  
-        ['email', 'Email'],  
-        ['address', 'Address'],  
-        ['notes', 'Notes']  
-      ].map(([field, label]) => <label key={field}>{label}  
-        {['address', 'notes'].includes(field)  
-          ? <textarea rows="2" value={form[field]}  
-              onChange={e => setForm({ ...form, [field]: e.target.value })} />  
-          : <input required={field === 'full_name'}  
-              type={field === 'email' ? 'email' : 'text'}  
-              value={form[field]}  
-              onChange={e => setForm({ ...form, [field]: e.target.value })} />}  
-      </label>)}  
-    </div>  
-    <button disabled={busy}>Save customer</button>  
-    <button type="button" className="secondary"  
-      onClick={() => { setFormOpen(false); setEditing(null); }}>Cancel</button>  
-  </form>}  
+  const [bankOpen, setBankOpen] = useState(false);
+  const [bankEditing, setBankEditing] = useState(null);
+  const [bankForm, setBankForm] = useState(blankBank);
 
-  <input className="search" placeholder="Search name, business, mobile or email"  
-    value={search} onChange={e => setSearch(e.target.value)} />  
+  const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [invoiceEditing, setInvoiceEditing] = useState(null);
+  const [invoiceForm, setInvoiceForm] = useState(blankInvoice);
 
-  {shownCustomers.length === 0 ? <p>No customers found.</p> :  
-    <div className="table-wrap"><table>  
-      <thead><tr><th>Name / Business</th><th>Mobile / Email</th>  
-        <th>Address</th><th>Actions</th></tr></thead>  
-      <tbody>{shownCustomers.map(c => <tr key={c.id}>  
-        <td><b>{c.full_name}</b><small>{c.business_name || '—'}</small></td>  
-        <td>{c.mobile || '—'}<small>{c.email || '—'}</small></td>  
-        <td>{c.address || '—'}</td>  
-        <td>  
-          <button className="small" onClick={() => {  
-            setEditing(c.id);  
-            setForm({  
-              full_name: c.full_name || '',  
-              business_name: c.business_name || '',  
-              mobile: c.mobile || '',  
-              email: c.email || '',  
-              address: c.address || '',  
-              notes: c.notes || ''  
-            });  
-            setFormOpen(true);  
-          }}>Edit</button>  
-          {isAdmin && <button className="small danger"  
-            onClick={() => deleteCustomer(c.id)}>Delete</button>}  
-        </td>  
-      </tr>)}</tbody>  
-    </table></div>}  
-</section>}  
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentForm, setPaymentForm] = useState(blankPayment);
 
-{tab === 'banks' && <section className="card">  
-  <h2>Bank Details</h2>  
-  <p>Store business bank account details securely.</p>  
-  <form onSubmit={saveBank}>  
-    <div className="grid">  
-      {[  
-        ['bank_name', 'Bank name'],  
-        ['account_name', 'Account holder name'],  
-        ['account_number', 'Account number'],  
-        ['ifsc', 'IFSC'],  
-        ['branch', 'Branch'],  
-        ['upi_id', 'UPI ID'],  
-        ['notes', 'Notes']  
-      ].map(([field, label]) => <label key={field}>{label}  
-        <input required={['bank_name', 'account_name', 'account_number'].includes(field)}  
-          value={bankForm[field]}  
-          onChange={e => setBankForm({ ...bankForm, [field]: e.target.value })} />  
-      </label>)}  
-    </div>  
-    <button disabled={busy}>Save bank details</button>  
-  </form>  
-  <div className="table-wrap"><table>  
-    <thead><tr><th>Bank</th><th>Account holder</th><th>Account no.</th>  
-      <th>IFSC / UPI</th><th>Actions</th></tr></thead>  
-    <tbody>{banks.map(b => <tr key={b.id}>  
-      <td>{b.bank_name}<small>{b.branch || '—'}</small></td>  
-      <td>{b.account_name}</td>  
-      <td>{b.account_number}</td>  
-      <td>{b.ifsc || '—'}<small>{b.upi_id || '—'}</small></td>  
-      <td><button className="small danger" onClick={() => deleteBank(b.id)}>Delete</button></td>  
-    </tr>)}</tbody>  
-  </table></div>  
-</section>}  
+  useEffect(() => {
+    if (!client) {
+      setChecking(false);
+      return undefined;
+    }
 
-{tab === 'invoices' && <section className="card">  
-  <h2>Create Invoice</h2>  
-  <form onSubmit={saveInvoice}>  
-    <div className="grid">  
-      <label>Customer  
-        <select required value={invoiceForm.customer_id}  
-          onChange={e => setInvoiceForm({ ...invoiceForm, customer_id: e.target.value })}>  
-          <option value="">Select customer</option>  
-          {customers.map(c => <option key={c.id} value={c.id}>  
-            {c.full_name}{c.business_name ? ` — ${c.business_name}` : ''}  
-          </option>)}  
-        </select>  
-      </label>  
-      <label>Invoice number  
-        <input required value={invoiceForm.invoice_number}  
-          onChange={e => setInvoiceForm({ ...invoiceForm, invoice_number: e.target.value })} />  
-      </label>  
-      <label>Invoice date  
-        <input type="date" required value={invoiceForm.invoice_date}  
-          onChange={e => setInvoiceForm({ ...invoiceForm, invoice_date: e.target.value })} />  
-      </label>  
-      <label>Due date  
-        <input type="date" value={invoiceForm.due_date}  
-          onChange={e => setInvoiceForm({ ...invoiceForm, due_date: e.target.value })} />  
-      </label>  
-      <label>Amount before GST (₹)  
-        <input type="number" min="0.01" step="0.01" required value={invoiceForm.amount}  
-          onChange={e => setInvoiceForm({ ...invoiceForm, amount: e.target.value })} />  
-      </label>  
-      <label>GST rate (%)  
-        <input type="number" min="0" max="100" step="0.01" required value={invoiceForm.gst_rate}  
-          onChange={e => setInvoiceForm({ ...invoiceForm, gst_rate: e.target.value })} />  
-      </label>  
-      <label>Description  
-        <textarea rows="2" value={invoiceForm.description}  
-          onChange={e => setInvoiceForm({ ...invoiceForm, description: e.target.value })} />  
-      </label>  
-    </div>  
-    <p>GST: {money(Number(invoiceForm.amount || 0) * Number(invoiceForm.gst_rate || 0) / 100)}  
-      {' · '}Total: {money(Number(invoiceForm.amount || 0) * (1 + Number(invoiceForm.gst_rate || 0) / 100))}</p>  
-    <button disabled={busy || customers.length === 0}>Save invoice</button>  
-  </form>  
+    let active = true;
 
-  <h3>Invoices</h3>  
-  <div className="table-wrap"><table>  
-    <thead><tr><th>Invoice</th><th>Customer</th><th>Date</th>  
-      <th>Total</th><th>Paid</th><th>Balance</th><th>Actions</th></tr></thead>  
-    <tbody>{invoices.map(inv => <tr key={inv.id}>  
-      <td>{inv.invoice_number}<small>{inv.status}</small></td>  
-      <td>{customerName(inv.customer_id)}</td>  
-      <td>{inv.invoice_date}</td>  
-      <td>{money(invoiceTotal(inv))}</td>  
-      <td>{money(invoicePaid(inv.id))}</td>  
-      <td>{money(invoiceDue(inv))}</td>  
-      <td>  
-        <button className="small" onClick={() => printInvoice(inv)}>Print / PDF</button>  
-        {isAdmin && inv.status !== 'Cancelled' &&  
-          <button className="small danger" onClick={() => cancelInvoice(inv)}>Cancel</button>}  
-      </td>  
-    </tr>)}</tbody>  
-  </table></div>  
-</section>}  
+    client.auth.getSession().then(({ data, error }) => {
+      if (!active) return;
+      if (error) setMsg(error.message);
+      setSession(data?.session || null);
+      setChecking(false);
+    });
 
-{tab === 'payments' && <section className="card">  
-  <h2>Record Payment</h2>  
-  <form onSubmit={savePayment}>  
-    <div className="grid">  
-      <label>Invoice  
-        <select required value={paymentForm.invoice_id}  
-          onChange={e => setPaymentForm({ ...paymentForm, invoice_id: e.target.value })}>  
-          <option value="">Select invoice</option>  
-          {invoices.filter(i => i.status !== 'Cancelled' && invoiceDue(i) > 0)  
-            .map(i => <option key={i.id} value={i.id}>  
-              {i.invoice_number} — {customerName(i.customer_id)} — Due {money(invoiceDue(i))}  
-            </option>)}  
-        </select>  
-      </label>  
-      <label>Payment date  
-        <input type="date" required value={paymentForm.payment_date}  
-          onChange={e => setPaymentForm({ ...paymentForm, payment_date: e.target.value })} />  
-      </label>  
-      <label>Amount (₹)  
-        <input type="number" min="0.01" step="0.01" required value={paymentForm.amount}  
-          onChange={e => setPaymentForm({ ...paymentForm, amount: e.target.value })} />  
-      </label>  
-      <label>From (কার কাছ থেকে)
-  <input
-    value={paymentForm.from_name || ''}
-    onChange={e => setPaymentForm({
-      ...paymentForm,
-      from_name: e.target.value
-    })}
-    placeholder="Customer / Supplier / Other"
-  />
-</label>
+    const {
+      data: { subscription },
+    } = client.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+    });
 
-<label>To (কাকে)
-  <input
-    value={paymentForm.to_name || ''}
-    onChange={e => setPaymentForm({
-      ...paymentForm,
-      to_name: e.target.value
-    })}
-    placeholder="Business / Driver / Other"
-  />
-</label>
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
-<label>Purpose (কেন)
-  <input
-    value={paymentForm.purpose || ''}
-    onChange={e => setPaymentForm({
-      ...paymentForm,
-      purpose: e.target.value
-    })}
-    placeholder="Payment reason"
-  />
-</label>
-      <label>Payment method  
-        <select value={paymentForm.method}  
-          onChange={e => setPaymentForm({ ...paymentForm, method: e.target.value })}>  
-          {['Bank transfer', 'UPI', 'Cash', 'Cheque', 'Card', 'Other']  
-            .map(m => <option key={m}>{m}</option>)}  
-        </select>  
-      </label>  
-      <label>Reference / transaction ID  
-        <input value={paymentForm.reference}  
-          onChange={e => setPaymentForm({ ...paymentForm, reference: e.target.value })} />  
-      </label>  
-      <label>Notes  
-        <input value={paymentForm.notes}  
-          onChange={e => setPaymentForm({ ...paymentForm, notes: e.target.value })} />  
-      </label>  
-    </div>  
-    <button disabled={busy || invoices.length === 0}>Save payment</button>  
-  </form>  
+  async function loadData(currentSession) {
+    if (!client || !currentSession) return;
 
-  <h3>Payment History</h3>  
-  <div className="table-wrap"><table>  
-    <thead><tr><th>Date</th><th>Invoice ID</th><th>Method</th>  
-      <th>Reference</th><th>Amount</th></tr></thead>  
-    <tbody>
-  {payments.map(p => <tr key={p.id}>
-    <td>{p.payment_date}</td>
-    <td>{p.from_name || '-'}</td>
-    <td>{p.to_name || '-'}</td>
-    <td>{p.purpose || '-'}</td>
-    <td>{invoices.find(i => i.id === p.invoice_id)?.invoice_number || '-'}</td>
-    <td>{p.method}</td>
-    <td>{p.reference || '-'}</td>
-    <td>₹{Number(p.amount || 0).toFixed(2)}</td>
-  </tr>)}
+    setBusy(true);
+    setMsg('');
+
+    const roleResult = await client
+      .from('app_roles')
+      .select('role')
+      .eq('user_id', currentSession.user.id)
+      .maybeSingle();
+
+    if (roleResult.error) {
+      setMsg(`Role যাচাই হয়নি: ${roleResult.error.message}`);
+      setRole('');
+      setBusy(false);
+      return;
+    }
+
+    const nextRole = roleResult.data?.role || 'no-role';
+    setRole(nextRole);
+
+    if (nextRole === 'no-role') {
+      setBusy(false);
+      return;
+    }
+
+    const [customerResult, bankResult, invoiceResult, paymentResult] =
+      await Promise.all([
+        client.from('customers')
+          .select('*')
+          .order('created_at', { ascending: false }),
+
+        client.from('bank_details')
+          .select('*')
+          .order('created_at', { ascending: false }),
+
+        client.from('invoices')
+          .select('*')
+          .order('invoice_date', { ascending: false }),
+
+        client.from('payments')
+          .select('*')
+          .order('payment_date', { ascending: false }),
+      ]);
+
+    const errors = [
+      ['Customers', customerResult.error],
+      ['Bank Details', bankResult.error],
+      ['Invoices', invoiceResult.error],
+      ['Payments', paymentResult.error],
+    ].filter((item) => item[1]);
+
+    setCustomers(customerResult.error ? [] : (customerResult.data || []));
+    setBanks(bankResult.error ? [] : (bankResult.data || []));
+    setInvoices(invoiceResult.error ? [] : (invoiceResult.data || []));
+    setPayments(paymentResult.error ? [] : (paymentResult.data || []));
+
+    if (errors.length) {
+      setMsg(
+        `${errors.map(([name, error]) => `${name}: ${error.message}`).join(' | ')}`
+      );
+    }
+
+    setBusy(false);
+  }
+
+  useEffect(() => {
+    if (session && client) {
+      loadData(session);
+    } else {
+      setRole('');
+      setCustomers([]);
+      setBanks([]);
+      setInvoices([]);
+      setPayments([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  const shownCustomers = useMemo(() => {
+    const q = search.toLowerCase().trim();
+
+    return customers.filter((customer) =>
+      !q || [
+        customer.full_name,
+        customer.business_name,
+        customer.mobile,
+        customer.email,
+      ].some((value) => String(value || '').toLowerCase().includes(q))
+    );
+  }, [customers, search]);
+
+  const customerName = (id) =>
+    customers.find((customer) => String(customer.id) === String(id))
+      ?.full_name || 'Customer not found';
+
+  const paidForInvoice = (invoiceId) =>
+    payments
+      .filter((payment) =>
+        (payment.transaction_type || 'Received') === 'Received' &&
+        String(payment.invoice_id) === String(invoiceId)
+      )
+      .reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+
+  const invoiceTotal = (invoice) => {
+    const amount = Number(invoice.amount) || 0;
+    const gst = Number(invoice.gst_rate) || 0;
+    return amount + (amount * gst / 100);
+  };
+
+  const invoiceBalance = (invoice) =>
+    Math.max(0, invoiceTotal(invoice) - paidForInvoice(invoice.id));
+
+  const report = useMemo(() => {
+    const billed = invoices
+      .filter((invoice) => invoice.status !== 'Cancelled')
+      .reduce((sum, invoice) => sum + invoiceTotal(invoice), 0);
+
+    const collected = payments
+      .filter((payment) => (payment.transaction_type || 'Received') === 'Received')
+      .reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+
+    const expenses = payments
+      .filter((payment) => payment.transaction_type === 'Paid')
+      .reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+
+    const outstanding = invoices
+      .filter((invoice) => invoice.status !== 'Cancelled')
+      .reduce((sum, invoice) => sum + invoiceBalance(invoice), 0);
+
+    return { billed, collected, expenses, outstanding };
+  }, [invoices, payments]);
+
+  async function login(event) {
+    event.preventDefault();
+
+    if (!client) {
+      setMsg('আগে Supabase project connect করুন।');
+      return;
+    }
+
+    setBusy(true);
+    setMsg('');
+
+    const { error } = await client.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+
+    setBusy(false);
+
+    if (error) {
+      setMsg(error.message);
+    } else {
+      setPassword('');
+    }
+  }
+
+  async function logout() {
+    if (!client) return;
+
+    const { error } = await client.auth.signOut();
+
+    if (error) setMsg(error.message);
+  }
+
+  function connectProject() {
+    if (!url.trim().startsWith('https://') || !key.trim()) {
+      setMsg('সঠিক Project URL ও public/anon key দিন।');
+      return;
+    }
+
+    if (/service_role|secret/i.test(key)) {
+      setMsg('Secret/service_role key ব্যবহার করবেন না। শুধু public/anon/publishable key দিন।');
+      return;
+    }
+
+    localStorage.setItem('sbs_project_url', url.trim());
+    localStorage.setItem('sbs_public_key', key.trim());
+    window.location.reload();
+  }
+
+  async function saveCustomer(event) {
+    event.preventDefault();
+    if (!session) return;
+
+    setBusy(true);
+    setMsg('');
+
+    const payload = { ...form, owner_id: session.user.id };
+
+    const result = editing
+      ? await client.from('customers')
+          .update(payload).eq('id', editing).select().single()
+      : await client.from('customers')
+          .insert(payload).select().single();
+
+    setBusy(false);
+
+    if (result.error) {
+      setMsg(`Customer save failed: ${result.error.message}`);
+      return;
+    }
+
+    setCustomers((previous) =>
+      editing
+        ? previous.map((item) =>
+            String(item.id) === String(editing) ? result.data : item
+          )
+        : [result.data, ...previous]
+    );
+
+    setFormOpen(false);
+    setEditing(null);
+    setForm(blankCustomer);
+    setMsg('Customer সংরক্ষিত হয়েছে।');
+  }
+
+  async function deleteCustomer(id) {
+    if (!window.confirm('এই Customer record মুছবেন?')) return;
+
+    const { error } = await client.from('customers').delete().eq('id', id);
+
+    if (error) {
+      setMsg(error.message);
+      return;
+    }
+
+    setCustomers((previous) =>
+      previous.filter((item) => String(item.id) !== String(id))
+    );
+    setMsg('Customer মুছে ফেলা হয়েছে।');
+  }
+
+  async function saveBank(event) {
+    event.preventDefault();
+    if (!session) return;
+
+    setBusy(true);
+    setMsg('');
+
+    const payload = { ...bankForm, owner_id: session.user.id };
+
+    const result = bankEditing
+      ? await client.from('bank_details')
+          .update(payload).eq('id', bankEditing).select().single()
+      : await client.from('bank_details')
+          .insert(payload).select().single();
+
+    setBusy(false);
+
+    if (result.error) {
+      setMsg(`Bank Details save failed: ${result.error.message}`);
+      return;
+    }
+
+    setBanks((previous) =>
+      bankEditing
+        ? previous.map((item) =>
+            String(item.id) === String(bankEditing) ? result.data : item
+          )
+        : [result.data, ...previous]
+    );
+
+    setBankOpen(false);
+    setBankEditing(null);
+    setBankForm(blankBank);
+    setMsg('Bank Details সংরক্ষিত হয়েছে।');
+  }
+
+  async function deleteBank(id) {
+    if (!window.confirm('এই Bank Details মুছবেন?')) return;
+
+    const { error } = await client.from('bank_details').delete().eq('id', id);
+
+    if (error) {
+      setMsg(error.message);
+      return;
+    }
+
+    setBanks((previous) =>
+      previous.filter((item) => String(item.id) !== String(id))
+    );
+    setMsg('Bank Details মুছে ফেলা হয়েছে।');
+  }
+
+  async function saveInvoice(event) {
+    event.preventDefault();
+    if (!session) return;
+
+    if (!invoiceForm.customer_id) {
+      setMsg('Invoice-এর জন্য Customer বেছে নিন।');
+      return;
+    }
+
+    const amount = Number(invoiceForm.amount);
+    const gstRate = Number(invoiceForm.gst_rate);
+
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      !Number.isFinite(gstRate) ||
+      gstRate < 0
+    ) {
+      setMsg('সঠিক amount ও GST rate দিন।');
+      return;
+    }
+
+    setBusy(true);
+    setMsg('');
+
+    const payload = {
+      ...invoiceForm,
+      amount,
+      gst_rate: gstRate,
+      owner_id: session.user.id,
+      invoice_number: invoiceForm.invoice_number.trim() ||
+        `SBS-${Date.now().toString().slice(-8)}`,
+    };
+
+    const result = invoiceEditing
+      ? await client.from('invoices')
+          .update(payload).eq('id', invoiceEditing).select().single()
+      : await client.from('invoices')
+          .insert(payload).select().single();
+
+    setBusy(false);
+
+    if (result.error) {
+      setMsg(`Invoice save failed: ${result.error.message}`);
+      return;
+    }
+
+    setInvoices((previous) =>
+      invoiceEditing
+        ? previous.map((item) =>
+            String(item.id) === String(invoiceEditing) ? result.data : item
+          )
+        : [result.data, ...previous]
+    );
+
+    setInvoiceOpen(false);
+    setInvoiceEditing(null);
+    setInvoiceForm(blankInvoice);
+    setMsg('Invoice সংরক্ষিত হয়েছে।');
+  }
+
+  async function deleteInvoice(id) {
+    const hasPayments = payments.some(
+      (payment) => String(payment.invoice_id) === String(id)
+    );
+
+    if (hasPayments) {
+      setMsg('এই Invoice-এ payment আছে। আগে payment record যাচাই করুন; invoice মুছবেন না।');
+      return;
+    }
+
+    if (!window.confirm('এই Invoice মুছবেন?')) return;
+
+    const { error } = await client.from('invoices').delete().eq('id', id);
+
+    if (error) {
+      setMsg(error.message);
+      return;
+    }
+
+    setInvoices((previous) =>
+      previous.filter((item) => String(item.id) !== String(id))
+    );
+    setMsg('Invoice মুছে ফেলা হয়েছে।');
+  }
+
+  async function savePayment(event) {
+    event.preventDefault();
+    if (!session) return;
+
+    const amount = Number(paymentForm.amount);
+    const isReceived = (paymentForm.transaction_type || 'Received') === 'Received';
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setMsg('সঠিক payment amount দিন।');
+      return;
+    }
+
+    if (!paymentForm.purpose.trim()) {
+      setMsg('Payment-এর Purpose লিখুন।');
+      return;
+    }
+
+    if (isReceived && !paymentForm.invoice_id) {
+      setMsg('টাকা Received হলে Invoice নির্বাচন করুন।');
+      return;
+    }
+
+    if (isReceived) {
+      const invoice = invoices.find(
+        (item) => String(item.id) === String(paymentForm.invoice_id)
+      );
+
+      if (!invoice) {
+        setMsg('নির্বাচিত Invoice পাওয়া যায়নি।');
+        return;
+      }
+
+      if (amount > invoiceBalance(invoice) + 0.005) {
+        setMsg(`Payment amount বকেয়ার চেয়ে বেশি। বর্তমান বকেয়া ${money(invoiceBalance(invoice))}।`);
+        return;
+      }
+    }
+
+    setBusy(true);
+    setMsg('');
+
+    const result = await client.from('payments')
+      .insert({
+        ...paymentForm,
+        invoice_id: isReceived ? paymentForm.invoice_id : null,
+        amount,
+        owner_id: session.user.id,
+      })
+      .select()
+      .single();
+
+    setBusy(false);
+
+    if (result.error) {
+      setMsg(`Payment save failed: ${result.error.message}`);
+      return;
+    }
+
+    setPayments((previous) => [result.data, ...previous]);
+    setPaymentOpen(false);
+    setPaymentForm(blankPayment);
+    setMsg('Payment সংরক্ষিত হয়েছে।');
+  }
+
+  async function deletePayment(id) {
+    if (!window.confirm('এই payment record মুছবেন?')) return;
+
+    const { error } = await client.from('payments').delete().eq('id', id);
+
+    if (error) {
+      setMsg(error.message);
+      return;
+    }
+
+    setPayments((previous) =>
+      previous.filter((item) => String(item.id) !== String(id))
+    );
+    setMsg('Payment record মুছে ফেলা হয়েছে।');
+  }
+
+  function printInvoice(invoice) {
+    const customer = customers.find(
+      (item) => String(item.id) === String(invoice.customer_id)
+    );
+    const bank = banks[0];
+    const paid = paidForInvoice(invoice.id);
+    const total = invoiceTotal(invoice);
+
+    const popup = window.open('', '_blank', 'width=800,height=900');
+
+    if (!popup) {
+      setMsg('PDF/Print window blocked. Browser pop-up permission চালু করুন।');
+      return;
+    }
+
+    const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[char]));
+
+    popup.document.write(`<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Invoice ${esc(invoice.invoice_number)}</title>
+<style>
+body{font:14px Arial,sans-serif;margin:40px;color:#222}
+h1{margin-bottom:4px}
+table{width:100%;border-collapse:collapse;margin-top:24px}
+td,th{padding:12px;border:1px solid #ccc;text-align:left}
+.right{text-align:right}
+.muted{color:#555}
+@media print{button{display:none}}
+</style>
+</head>
+<body>
+<h1>SANTU BUSINESS SERVICES</h1>
+<p class="muted">YOUR OUTSOURCED OPERATIONS PARTNER</p>
+<hr>
+<h2>INVOICE</h2>
+<p><b>Invoice No:</b> ${esc(invoice.invoice_number)}<br>
+<b>Invoice Date:</b> ${esc(invoice.invoice_date)}<br>
+<b>Due Date:</b> ${esc(invoice.due_date || '—')}</p>
+<p><b>Bill To:</b> ${esc(customer?.full_name || 'Customer')}<br>
+${esc(customer?.business_name || '')}<br>
+${esc(customer?.address || '')}<br>
+${esc(customer?.mobile || '')}</p>
+<table>
+<thead><tr><th>Description</th><th class="right">Amount</th></tr></thead>
+<tbody>
+<tr><td>${esc(invoice.description || 'Services')}</td><td class="right">${money(invoice.amount)}</td></tr>
+<tr><td>GST (${esc(invoice.gst_rate)}%)</td><td class="right">${money(Number(invoice.amount) * Number(invoice.gst_rate) / 100)}</td></tr>
+<tr><th>Total</th><th class="right">${money(total)}</th></tr>
+<tr><td>Paid</td><td class="right">${money(paid)}</td></tr>
+<tr><th>Balance Due</th><th class="right">${money(Math.max(0, total - paid))}</th></tr>
 </tbody>
-  </table></div>  
-</section>}  
+</table>
+${bank ? `<h3>Bank Details</h3>
+<p>${esc(bank.bank_name)}<br>
+Account name: ${esc(bank.account_name)}<br>
+Account number: ${esc(bank.account_number)}<br>
+IFSC: ${esc(bank.ifsc)}<br>
+UPI: ${esc(bank.upi_id)}</p>` : ''}
+<p class="muted">Thank you for your business.</p>
+<button onclick="window.print()">Print / Save as PDF</button>
+</body>
+</html>`);
 
-{tab === 'reports' && <section className="card">  
-  <h2>Reports</h2>  
-  <div className="stats">  
-    <div className="stat"><span>Total customers</span><b>{customers.length}</b></div>  
-    <div className="stat"><span>Active invoices</span>  
-      <b>{invoices.filter(i => i.status !== 'Cancelled').length}</b></div>  
-    <div className="stat"><span>Total billed incl. GST</span><b>{money(totalBilled)}</b></div>  
-    <div className="stat"><span>Total payments</span><b>{money(totalCollected)}</b></div>  
-    <div className="stat"><span>Total outstanding</span><b>{money(totalOutstanding)}</b></div>  
-  </div>  
-  <h3>Outstanding Invoices</h3>  
-  <div className="table-wrap"><table>  
-    <thead><tr><th>Invoice</th><th>Customer</th><th>Total</th><th>Paid</th><th>Balance</th></tr></thead>  
-    <tbody>{invoices.filter(i => i.status !== 'Cancelled' && invoiceDue(i) > 0)  
-      .map(i => <tr key={i.id}>  
-        <td>{i.invoice_number}</td><td>{customerName(i.customer_id)}</td>  
-        <td>{money(invoiceTotal(i))}</td><td>{money(invoicePaid(i.id))}</td>  
-        <td>{money(invoiceDue(i))}</td>  
-      </tr>)}</tbody>  
-  </table></div>  
-  <button onClick={() => window.print()}>Print / Save report as PDF</button>  
-  <button className="secondary" onClick={loadData}>Refresh data</button>  
-</section>}  
+    popup.document.close();
+  }
 
-<footer>SANTU BUSINESS SERVICES · Your Outsourced Operations Partner</footer>
+  function downloadReport() {
+    const rows = [
+      ['Report', 'SANTU BUSINESS SERVICES'],
+      ['Generated on', today()],
+      ['Total customers', customers.length],
+      ['Total invoices (including GST)', report.billed.toFixed(2)],
+      ['Total payments received', report.collected.toFixed(2)],
+      ['Total paid / expenses', report.expenses.toFixed(2)],
+      ['Outstanding balance', report.outstanding.toFixed(2)],
+      [],
+      ['Invoice No', 'Date', 'Customer', 'Amount before GST', 'GST %', 'Invoice total', 'Received', 'Balance'],
+      ...invoices.map((invoice) => [
+        invoice.invoice_number,
+        invoice.invoice_date,
+        customerName(invoice.customer_id),
+        Number(invoice.amount || 0).toFixed(2),
+        Number(invoice.gst_rate || 0),
+        invoiceTotal(invoice).toFixed(2),
+        paidForInvoice(invoice.id).toFixed(2),
+        invoiceBalance(invoice).toFixed(2),
+      ]),
+      [],
+      ['Date', 'Type', 'From', 'To', 'Purpose', 'Method', 'Reference', 'Amount'],
+      ...payments.map((payment) => [
+        payment.payment_date,
+        payment.transaction_type || 'Received',
+        payment.from_name,
+        payment.to_name,
+        payment.purpose,
+        payment.method,
+        payment.reference,
+        Number(payment.amount || 0).toFixed(2),
+      ]),
+    ];
 
-  </main>;  
-}  createRoot(document.getElementById('root')).render(<App />);
+    const csv = rows.map((row) =>
+      row.map((cell) => {
+        const value = String(cell ?? '');
+        return `"${value.replace(/"/g, '""')}"`;
+      }).join(',')
+    ).join('\r\n');
+
+    const blob = new Blob(['\ufeff', csv], {
+      type: 'text/csv;charset=utf-8;',
+    });
+
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = `sbs-report-${today()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  }
+
+  if (checking) {
+    return <main className="center">Checking session…</main>;
+  }
+
+  if (config || !client) {
+    return <main className="wrap">
+      <header className="hero">
+        <small>YOUR OUTSOURCED OPERATIONS PARTNER</small>
+        <h1>SANTU BUSINESS SERVICES</h1>
+        <p>Business Management App</p>
+      </header>
+      <section className="card">
+        <h2>Connect Supabase</h2>
+        <p>Supabase Project URL এবং public/anon/publishable key দিন। <b>service_role/secret key কখনও দেবেন না।</b></p>
+        <label>Project URL
+          <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://project.supabase.co" />
+        </label>
+        <label>Public / anon key
+          <textarea rows="3" value={key} onChange={(event) => setKey(event.target.value)} placeholder="Public key" />
+        </label>
+        <button onClick={connectProject}>Connect project</button>
+        {msg && <p className="msg">{msg}</p>}
+        <p className="muted">এই কনফিগারেশন শুধু এই browser-এ থাকবে।</p>
+      </section>
+    </main>;
+  }
+
+  if (!session) {
+    return <main className="wrap">
+      <header className="hero">
+        <small>YOUR OUTSOURCED OPERATIONS PARTNER</small>
+        <h1>SANTU BUSINESS SERVICES</h1>
+        <p>Business Management App</p>
+      </header>
+      <section className="card">
+        <h2>Admin / Staff Login</h2>
+        <form onSubmit={login}>
+          <label>Email
+            <input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+          </label>
+          <label>Password
+            <input required type="password" minLength="8" value={password} onChange={(event) => setPassword(event.target.value)} />
+          </label>
+          <button disabled={busy}>{busy ? 'Please wait…' : 'Login'}</button>
+        </form>
+        <button className="secondary" onClick={() => setConfig(true)}>Supabase settings</button>
+        {msg && <p className="msg">{msg}</p>}
+      </section>
+    </main>;
+  }
+
+  if (role === 'no-role') {
+    return <main className="wrap">
+      <section className="hero"><h1>Access pending</h1></section>
+      <section className="card">
+        <h2>Admin/Staff role নেই</h2>
+        <p>এই Auth User ID-র জন্য app_roles টেবিলে role যোগ করুন।</p>
+        <code>{session.user.id}</code>
+        <button className="secondary" onClick={logout}>Logout</button>
+      </section>
+    </main>;
+  }
+
+  return <main className="app">
+    <header className="hero">
+      <small>YOUR OUTSOURCED OPERATIONS PARTNER</small>
+      <div className="hero-row">
+        <div>
+          <h1>SANTU BUSINESS SERVICES</h1>
+          <p>Business Management Dashboard</p>
+        </div>
+        <div className="hero-actions">
+          <button className="secondary" onClick={goHome}>Home</button>
+          <button className="secondary" onClick={logout}>Logout</button>
+        </div>
+      </div>
+    </header>
+
+    <section className="stats">
+      <div className="stat"><span>Total customers</span><b>{customers.length}</b></div>
+      <div className="stat"><span>Invoices</span><b>{invoices.length}</b></div>
+      <div className="stat"><span>Payments received</span><b>{money(report.collected)}</b></div>
+      <div className="stat"><span>Paid / expenses</span><b>{money(report.expenses)}</b></div>
+      <div className="stat"><span>Outstanding</span><b>{money(report.outstanding)}</b></div>
+    </section>
+
+    <div className="card nav-tabs">
+      <button className="secondary" onClick={goBack}>← Back</button>
+      <button className="secondary" onClick={goHome}>🏠 Home</button>
+    </div>
+
+    <nav className="features" aria-label="App sections">
+      {[
+        ['customers', 'Customers'],
+        ['banks', 'Bank Details'],
+        ['invoices', 'Invoices & PDF'],
+        ['payments', 'Payments'],
+        ['reports', 'Reports'],
+      ].map(([value, label]) => (
+        <button
+          key={value}
+          className={tab === value ? '' : 'secondary'}
+          onClick={() => goToTab(value)}
+        >
+          {label}
+        </button>
+      ))}
+    </nav>
+
+    {msg && <div className="message" role="status">
+      {msg}<button onClick={() => setMsg('')}>×</button>
+    </div>}
+
+    {busy && <p className="muted">Loading / saving…</p>}
+
+    {tab === 'customers' && <section className="card">
+      <div className="section-title">
+        <div><h2>Customer Master</h2><p>Customer যোগ করুন, খুঁজুন, Edit করুন।</p></div>
+        <button onClick={() => {
+          setEditing(null);
+          setForm({ ...blankCustomer });
+          setFormOpen(!formOpen);
+        }}>+ Add customer</button>
+      </div>
+
+      {formOpen && <form onSubmit={saveCustomer}>
+        <h3>{editing ? 'Edit Customer' : 'New Customer'}</h3>
+        <div className="grid">
+          {[
+            ['full_name', 'Full name *'],
+            ['business_name', 'Business name'],
+            ['mobile', 'Mobile number'],
+            ['email', 'Email'],
+            ['address', 'Address'],
+            ['notes', 'Notes'],
+          ].map(([field, label]) => (
+            <label key={field}>{label}
+              {field === 'address' || field === 'notes'
+                ? <textarea rows="2" value={form[field]} onChange={(event) => setForm({ ...form, [field]: event.target.value })} />
+                : <input required={field === 'full_name'} type={field === 'email' ? 'email' : 'text'} value={form[field]} onChange={(event) => setForm({ ...form, [field]: event.target.value })} />
+              }
+            </label>
+          ))}
+        </div>
+        <button disabled={busy}>{busy ? 'Saving…' : 'Save customer'}</button>
+        <button type="button" className="secondary" onClick={() => {
+          setFormOpen(false);
+          setEditing(null);
+        }}>Cancel</button>
+      </form>}
+
+      <input className="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, business, mobile or email" />
+
+      {shownCustomers.length === 0 ? <div className="empty">No customers found yet.</div> :
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Name / Business</th><th>Mobile / Email</th><th>Address</th><th>Actions</th></tr></thead>
+            <tbody>
+              {shownCustomers.map((customer) => <tr key={customer.id}>
+                <td><b>{customer.full_name}</b><small>{customer.business_name || '—'}</small></td>
+                <td>{customer.mobile || '—'}<small>{customer.email || '—'}</small></td>
+                <td>{customer.address || '—'}</td>
+                <td>
+                  <button className="small" onClick={() => {
+                    setEditing(customer.id);
+                    setForm({
+                      full_name: customer.full_name || '',
+                      business_name: customer.business_name || '',
+                      mobile: customer.mobile || '',
+                      email: customer.email || '',
+                      address: customer.address || '',
+                      notes: customer.notes || '',
+                    });
+                    setFormOpen(true);
+                  }}>Edit</button>
+                  {role === 'admin' && <button className="small danger" onClick={() => deleteCustomer(customer.id)}>Delete</button>}
+                </td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>}
+    </section>}
+
+    {tab === 'banks' && <section className="card">
+      <div className="section-title">
+        <div><h2>Bank Details</h2><p>ব্যাংক ও payment গ্রহণের তথ্য।</p></div>
+        <button onClick={() => {
+          setBankEditing(null);
+          setBankForm({ ...blankBank });
+          setBankOpen(!bankOpen);
+        }}>+ Add bank</button>
+      </div>
+
+      {bankOpen && <form onSubmit={saveBank}>
+        <h3>{bankEditing ? 'Edit Bank Details' : 'New Bank Details'}</h3>
+        <div className="grid">
+          {[
+            ['bank_name', 'Bank name *'],
+            ['account_name', 'Account holder *'],
+            ['account_number', 'Account number *'],
+            ['ifsc', 'IFSC'],
+            ['branch', 'Branch'],
+            ['upi_id', 'UPI ID'],
+            ['notes', 'Notes'],
+          ].map(([field, label]) => (
+            <label key={field}>{label}
+              {field === 'notes'
+                ? <textarea rows="2" value={bankForm[field]} onChange={(event) => setBankForm({ ...bankForm, [field]: event.target.value })} />
+                : <input required={['bank_name', 'account_name', 'account_number'].includes(field)} value={bankForm[field]} onChange={(event) => setBankForm({ ...bankForm, [field]: event.target.value })} />
+              }
+            </label>
+          ))}
+        </div>
+        <button disabled={busy}>{busy ? 'Saving…' : 'Save bank'}</button>
+        <button type="button" className="secondary" onClick={() => setBankOpen(false)}>Cancel</button>
+      </form>}
+
+      {banks.length === 0 ? <div className="empty">No bank details yet.</div> :
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Bank / Holder</th><th>Account</th><th>IFSC / Branch</th><th>UPI</th><th>Actions</th></tr></thead>
+            <tbody>
+              {banks.map((bank) => <tr key={bank.id}>
+                <td><b>{bank.bank_name}</b><small>{bank.account_name}</small></td>
+                <td>{bank.account_number}</td>
+                <td>{bank.ifsc || '—'}<small>{bank.branch || '—'}</small></td>
+                <td>{bank.upi_id || '—'}</td>
+                <td>
+                  <button className="small" onClick={() => {
+                    setBankEditing(bank.id);
+                    setBankForm({
+                      bank_name: bank.bank_name || '',
+                      account_name: bank.account_name || '',
+                      account_number: bank.account_number || '',
+                      ifsc: bank.ifsc || '',
+                      branch: bank.branch || '',
+                      upi_id: bank.upi_id || '',
+                      notes: bank.notes || '',
+                    });
+                    setBankOpen(true);
+                  }}>Edit</button>
+                  {role === 'admin' && <button className="small danger" onClick={() => deleteBank(bank.id)}>Delete</button>}
+                </td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>}
+      <p className="muted">শুধু প্রয়োজনীয় ব্যাংক তথ্য রাখুন এবং RLS policy যাচাই করুন।</p>
+    </section>}
+
+    {tab === 'invoices' && <section className="card">
+      <div className="section-title">
+        <div><h2>Invoices & PDF</h2><p>Invoice তৈরি করুন এবং Print / Save as PDF ব্যবহার করুন।</p></div>
+        <button onClick={() => {
+          setInvoiceEditing(null);
+          setInvoiceForm({ ...blankInvoice });
+          setInvoiceOpen(!invoiceOpen);
+        }}>+ New invoice</button>
+      </div>
+
+      {invoiceOpen && <form onSubmit={saveInvoice}>
+        <h3>{invoiceEditing ? 'Edit Invoice' : 'New Invoice'}</h3>
+        <div className="grid">
+          <label>Customer *
+            <select required value={invoiceForm.customer_id} onChange={(event) => setInvoiceForm({ ...invoiceForm, customer_id: event.target.value })}>
+              <option value="">Select customer</option>
+              {customers.map((customer) => <option key={customer.id} value={customer.id}>
+                {customer.full_name}{customer.business_name ? ` — ${customer.business_name}` : ''}
+              </option>)}
+            </select>
+          </label>
+          <label>Invoice number
+            <input value={invoiceForm.invoice_number} onChange={(event) => setInvoiceForm({ ...invoiceForm, invoice_number: event.target.value })} placeholder="Auto-generated if blank" />
+          </label>
+          <label>Invoice date
+            <input type="date" required value={invoiceForm.invoice_date} onChange={(event) => setInvoiceForm({ ...invoiceForm, invoice_date: event.target.value })} />
+          </label>
+          <label>Due date
+            <input type="date" value={invoiceForm.due_date} onChange={(event) => setInvoiceForm({ ...invoiceForm, due_date: event.target.value })} />
+          </label>
+          <label>Amount before GST (₹) *
+            <input type="number" min="0.01" step="0.01" required value={invoiceForm.amount} onChange={(event) => setInvoiceForm({ ...invoiceForm, amount: event.target.value })} />
+          </label>
+          <label>GST rate (%)
+            <select value={invoiceForm.gst_rate} onChange={(event) => setInvoiceForm({ ...invoiceForm, gst_rate: event.target.value })}>
+              <option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option><option value="28">28%</option>
+            </select>
+          </label>
+          <label>Status
+            <select value={invoiceForm.status} onChange={(event) => setInvoiceForm({ ...invoiceForm, status: event.target.value })}>
+              <option>Unpaid</option><option>Part-paid</option><option>Paid</option><option>Cancelled</option>
+            </select>
+          </label>
+          <label>Description
+            <input value={invoiceForm.description} onChange={(event) => setInvoiceForm({ ...invoiceForm, description: event.target.value })} />
+          </label>
+        </div>
+        {invoiceForm.amount !== '' && <p><b>Estimated total:</b> {money(Number(invoiceForm.amount) * (1 + Number(invoiceForm.gst_rate || 0) / 100))}</p>}
+        <button disabled={busy || customers.length === 0}>{busy ? 'Saving…' : 'Save invoice'}</button>
+        <button type="button" className="secondary" onClick={() => setInvoiceOpen(false)}>Cancel</button>
+      </form>}
+
+      {invoices.length === 0 ? <div className="empty">No invoices yet.</div> :
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Total</th><th>Paid</th><th>Balance</th><th>Actions</th></tr></thead>
+            <tbody>
+              {invoices.map((invoice) => <tr key={invoice.id}>
+                <td><b>{invoice.invoice_number || '—'}</b><small>{invoice.status || 'Unpaid'}</small></td>
+                <td>{customerName(invoice.customer_id)}</td>
+                <td>{invoice.invoice_date || '—'}</td>
+                <td>{money(invoiceTotal(invoice))}</td>
+                <td>{money(paidForInvoice(invoice.id))}</td>
+                <td>{money(invoiceBalance(invoice))}</td>
+                <td>
+                  <button className="small" onClick={() => printInvoice(invoice)}>PDF / Print</button>
+                  <button className="small" onClick={() => {
+                    setInvoiceEditing(invoice.id);
+                    setInvoiceForm({
+                      customer_id: String(invoice.customer_id || ''),
+                      invoice_number: invoice.invoice_number || '',
+                      invoice_date: invoice.invoice_date || today(),
+                      due_date: invoice.due_date || '',
+                      description: invoice.description || '',
+                      amount: String(invoice.amount ?? ''),
+                      gst_rate: String(invoice.gst_rate ?? 5),
+                      status: invoice.status || 'Unpaid',
+                    });
+                    setInvoiceOpen(true);
+                  }}>Edit</button>
+                  {role === 'admin' && invoice.status !== 'Cancelled' &&
+                    <button className="small danger" onClick={() => {
+                      if (window.confirm('এই Invoice cancel করবেন?')) {
+                        client.from('invoices').update({ status: 'Cancelled' }).eq('id', invoice.id)
+                          .then(({ error }) => {
+                            if (error) setMsg(error.message);
+                            else {
+                              setInvoices((previous) => previous.map((item) =>
+                                String(item.id) === String(invoice.id)
+                                  ? { ...item, status: 'Cancelled' }
+                                  : item
+                              ));
+                              setMsg('Invoice cancelled.');
+                            }
+                          });
+                      }
+                    }}>Cancel</button>}
+                  {role === 'admin' && <button className="small danger" onClick={() => deleteInvoice(invoice.id)}>Delete</button>}
+                </td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>}
+    </section>}
+
+    {tab === 'payments' && <section className="card">
+      <div className="section-title">
+        <div><h2>Payments</h2><p>Received এবং Paid transaction আলাদা করে রাখুন।</p></div>
+        <button onClick={() => {
+          setPaymentForm({ ...blankPayment });
+          setPaymentOpen(!paymentOpen);
+        }}>+ Record payment</button>
+      </div>
+
+      {paymentOpen && <form onSubmit={savePayment}>
+        <h3>Record payment</h3>
+        <div className="grid">
+          <label>Transaction type *
+            <select required value={paymentForm.transaction_type}
+              onChange={(event) => setPaymentForm({
+                ...paymentForm,
+                transaction_type: event.target.value,
+                invoice_id: event.target.value === 'Paid' ? '' : paymentForm.invoice_id,
+              })}>
+              <option value="Received">Received (টাকা পেলাম)</option>
+              <option value="Paid">Paid (টাকা দিলাম)</option>
+            </select>
+          </label>
+
+          <label>From (কার কাছ থেকে)
+            <input value={paymentForm.from_name}
+              onChange={(event) => setPaymentForm({ ...paymentForm, from_name: event.target.value })}
+              placeholder="Customer / Supplier / Other" />
+          </label>
+
+          <label>To (কাকে)
+            <input value={paymentForm.to_name}
+              onChange={(event) => setPaymentForm({ ...paymentForm, to_name: event.target.value })}
+              placeholder="Business / Driver / Other" />
+          </label>
+
+          <label>Purpose (কেন) *
+            <input required value={paymentForm.purpose}
+              onChange={(event) => setPaymentForm({ ...paymentForm, purpose: event.target.value })}
+              placeholder="Payment reason" />
+          </label>
+
+          <label>Invoice {paymentForm.transaction_type === 'Received' ? '*' : '(Paid হলে ঐচ্ছিক)'}
+            <select required={paymentForm.transaction_type === 'Received'}
+              value={paymentForm.invoice_id}
+              onChange={(event) => setPaymentForm({ ...paymentForm, invoice_id: event.target.value })}>
+              <option value="">Select invoice</option>
+              {invoices.filter((invoice) =>
+                invoice.status !== 'Cancelled' && invoiceBalance(invoice) > 0
+              ).map((invoice) => (
+                <option key={invoice.id} value={invoice.id}>
+                  {invoice.invoice_number} — {customerName(invoice.customer_id)} — Due {money(invoiceBalance(invoice))}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>Payment date *
+            <input type="date" required value={paymentForm.payment_date}
+              onChange={(event) => setPaymentForm({ ...paymentForm, payment_date: event.target.value })} />
+          </label>
+
+          <label>Amount (₹) *
+            <input type="number" min="0.01" step="0.01" required value={paymentForm.amount}
+              onChange={(event) => setPaymentForm({ ...paymentForm, amount: event.target.value })} />
+          </label>
+
+          <label>Payment method
+            <select value={paymentForm.method}
+              onChange={(event) => setPaymentForm({ ...paymentForm, method: event.target.value })}>
+              {['Bank transfer', 'UPI', 'Cash', 'Cheque', 'Card', 'Other'].map((method) =>
+                <option key={method}>{method}</option>
+              )}
+            </select>
+          </label>
+
+          <label>Reference / UTR
+            <input value={paymentForm.reference}
+              onChange={(event) => setPaymentForm({ ...paymentForm, reference: event.target.value })} />
+          </label>
+
+          <label>Notes
+            <input value={paymentForm.notes}
+              onChange={(event) => setPaymentForm({ ...paymentForm, notes: event.target.value })} />
+          </label>
+        </div>
+
+        <button disabled={busy}>{busy ? 'Saving…' : 'Save payment'}</button>
+        <button type="button" className="secondary" onClick={() => setPaymentOpen(false)}>Cancel</button>
+      </form>}
+
+      {payments.length === 0 ? <div className="empty">No payments recorded yet.</div> :
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th><th>Type</th><th>From</th><th>To</th>
+                <th>Purpose</th><th>Invoice</th><th>Customer</th>
+                <th>Method / Reference</th><th>Amount</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payments.map((payment) => {
+                const invoice = invoices.find((item) =>
+                  String(item.id) === String(payment.invoice_id)
+                );
+                return <tr key={payment.id}>
+                  <td>{payment.payment_date || '—'}</td>
+                  <td>{payment.transaction_type || 'Received'}</td>
+                  <td>{payment.from_name || '—'}</td>
+                  <td>{payment.to_name || '—'}</td>
+                  <td>{payment.purpose || payment.notes || '—'}</td>
+                  <td>{invoice?.invoice_number || (payment.invoice_id ? 'Invoice not found' : '—')}</td>
+                  <td>{invoice ? customerName(invoice.customer_id) : '—'}</td>
+                  <td>{payment.method || '—'}<small>{payment.reference || '—'}</small></td>
+                  <td>{money(payment.amount)}</td>
+                  <td>
+                    {role === 'admin' && <button className="small danger" onClick={() => deletePayment(payment.id)}>Delete</button>}
+                  </td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>}
+    </section>}
+
+    {tab === 'reports' && <section className="card">
+      <div className="section-title">
+        <div><h2>Reports</h2><p>Received, expenses এবং outstanding-এর সারাংশ।</p></div>
+        <button onClick={downloadReport}>Export CSV report</button>
+      </div>
+
+      <div className="stats">
+        <div className="stat"><span>Total invoices incl. GST</span><b>{money(report.billed)}</b></div>
+        <div className="stat"><span>Total received</span><b>{money(report.collected)}</b></div>
+        <div className="stat"><span>Total paid / expenses</span><b>{money(report.expenses)}</b></div>
+        <div className="stat"><span>Total outstanding</span><b>{money(report.outstanding)}</b></div>
+      </div>
+
+      {invoices.length === 0 ? <div className="empty">Report তৈরি করতে আগে invoice যোগ করুন।</div> :
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Invoice</th><th>Customer</th><th>Total</th><th>Received</th><th>Balance</th></tr></thead>
+            <tbody>
+              {invoices.filter((invoice) => invoice.status !== 'Cancelled').map((invoice) => (
+                <tr key={invoice.id}>
+                  <td>{invoice.invoice_number}</td>
+                  <td>{customerName(invoice.customer_id)}</td>
+                  <td>{money(invoiceTotal(invoice))}</td>
+                  <td>{money(paidForInvoice(invoice.id))}</td>
+                  <td>{money(invoiceBalance(invoice))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>}
+    </section>}
+
+    <footer>SANTU BUSINESS SERVICES · Your Outsourced Operations Partner</footer>
+  </main>;
+}
+
+createRoot(document.getElementById('root')).render(<App />);
